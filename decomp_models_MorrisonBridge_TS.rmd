@@ -1,0 +1,147 @@
+---
+title: "ARIMA models Morrison Bridge"
+author: "Mark Roes"
+date: "May 23, 2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+# load packages
+options(repos=structure(c(cran="https://ftp.osuosl.org/pub/cran/")))  
+packages <- c("xtable", "knitr", "stringr", "DescTools", "chron", "TSA", "Amelia", "forecast", "mgcv") 
+if (length(setdiff(packages, rownames(installed.packages()))) > 0) {
+  install.packages(setdiff(packages, rownames(installed.packages())))  
+}  
+lapply(packages, require, character.only=TRUE)
+# options
+knitr::opts_knit$set(root.dir = 'C:/Users/Mark/Documents/consulting',echo=TRUE) 
+options(xtable.comment=FALSE)
+# Set file name
+filename <- "Morrison_TS_Amelia_Imputed1.csv"
+```
+
+* Includes data from 2/15/2013 forward, and Amelia imputed values.
+
+```{r data}
+data.MBts <- read.csv(filename)
+data.MBts <- data.MBts[-c(73191:nrow(data.MBts)),]
+# manage dates
+data.MBts[, c(17:18)] <- lapply(data.MBts[, c(17:18)], as.character)
+data.MBts$DateTime <- chron(dates=data.MBts$Date.chron, times=data.MBts$Time.chron, 
+                            format=c('m/d/y', 'h:m:s'))
+data.MBts$Date.chron <- chron(dates=data.MBts$Date.chron, format=c('m/d/y'))
+data.MBts$Time.chron <- chron(times=data.MBts$Time.chron, format=c('h:m:s'))
+```
+
+
+```{r ts objects}
+temp<-ts(data.MBts$WaterTemp,start = 2013.125 , frequency = 17520)
+disc<-ts(data.MBts$Discharge,start = 2013.125, frequency = 17520)
+velo<-ts(data.MBts$StreamVelocity,start = 2013.125, frequency = 17520)
+gage<-ts(data.MBts$GageHeight,start = 2013.125, frequency = 17520)
+depth<-ts(data.MBts$SensorDepth,start = 2013.125, frequency = 17520)
+do2<-ts(data.MBts$DissolvedO2,start = 2013.125, frequency = 17520)
+o2sat<-ts(data.MBts$O2Saturation,start = 2013.125, frequency = 17520)
+ph<-ts(data.MBts$pH,start = 2013.125, frequency = 17520)
+conduct<-ts(data.MBts$Conductance,start = 2013.125, frequency = 17520)
+turbid<-ts(data.MBts$Turbidity,start = 2013.125, frequency = 17520)
+secchi<-ts(data.MBts$SecchiDepth,start = 2013.125, frequency = 17520)
+chloro<-ts(data.MBts$Chlorophyll,start = 2013.125, frequency = 17520)
+phyco<-ts(data.MBts$Phycocyanin,start = 2013.125, frequency = 17520)
+fdom<-ts(data.MBts$fDOM,start = 2013.125, frequency = 17520)
+nitr<-ts(data.MBts$Nitrate,start = 2013.125, frequency = 17520)
+```
+
+```{r decomposing time series data}
+decomp.temp<-stl(temp, s.window = "periodic")
+decomp.disc<-stl(disc, s.window = "periodic")
+decomp.velo<-stl(ts(data.MBts$StreamVelocity,start = 2013.125, frequency = 17520), s.window = "periodic")
+decomp.gage<-stl(ts(data.MBts$GageHeight,start = 2013.125, frequency = 17520), s.window = "periodic")
+decomp.depth<-stl(depth, s.window = "periodic")
+decomp.do2 <-stl(do2, s.window = "periodic")
+decomp.o2sat<-stl(o2sat, s.window = "periodic")
+decomp.ph<-stl(ph, s.window = "periodic")
+decomp.conduct<-stl(conduct, s.window = "periodic")
+decomp.turbid<-stl(turbid, s.window = "periodic")
+decomp.secchi<-stl(secchi, s.window = "periodic")
+decomp.chloro<-stl(chloro, s.window = "periodic")
+decomp.phyco<-stl(phyco, s.window = "periodic")
+decomp.fdom<-stl(fdom, s.window = "periodic")
+decomp.nitr<-stl(nitr, s.window = "periodic")
+```
+```{r plotting decomp data}
+plot(decomp.temp, main = "Water Temperature")
+plot(decomp.disc, main = "Stream Discharge")
+plot(decomp.disc, main = "Stream Velocity")
+plot(decomp.gage, main = "Gage Height")
+plot(decomp.depth, main = "Sensor Depth")
+plot(decomp.do2, main ="Dissolved O2")
+plot(decomp.o2sat, main = "O2 Saturation")
+plot(decomp.ph, main = "pH")
+plot(decomp.conduct, main = "Conductance")
+plot(decomp.turbid, main = "Turbidity")
+plot(decomp.secchi, main = "Secchi Depth")
+plot(decomp.chloro, main = "Chlorophyll")
+plot(decomp.phyco, main = "Phycocyanin")
+plot(decomp.fdom, main ="fDOM")
+plot(decomp.nitr, main ="Nitrate")
+
+```
+```{r testing stationarity}
+X<-list(temp,disc,velo,gage,depth,do2,o2sat,ph,conduct,turbid,secchi,chloro,phyco,fdom,nitr)
+adf.test(temp,alternative = "stationary")
+adf.test(disc,alternative = "stationary")
+adf.test(velo,alternative = "stationary")
+adf.test(gage,alternative = "stationary")
+adf.test(depth,alternative = "stationary")
+adf.test(do2,alternative = "stationary")
+adf.test(o2sat,alternative = "stationary")
+adf.test(ph,alternative = "stationary")
+adf.test(conduct,alternative = "stationary")
+adf.test(turbid,alternative = "stationary")
+adf.test(secchi,alternative = "stationary")
+adf.test(chloro,alternative = "stationary")
+adf.test(phyco,alternative = "stationary")
+adf.test(fdom,alternative = "stationary")
+adf.test(nitr,alternative = "stationary")
+
+```
+####With an $\alpha = .05$:
+Stationary: Discharge, Velocity, Sensor Depth, O2 Saturation, pH, Conductivity, Turbidity, Secchi Depth, Chlorophyll, Phycocyanin, fDOM, and Nitrate.
+
+Non-Stationary: Water Temperature, Gage Height, and Dissolved O2.
+
+Non-stationary parameters cannot be modelled using a basic ARIMA model.  However we can use differencing to fix this.
+
+```{r differencing}
+#diff.temp<-diff(temp)
+#diff.gage<-diff(gage)
+#diff.do2<-diff(do2)
+
+#adf.test(diff.temp, alternative = "stationary")
+#adf.test(diff.gage, alternative = "stationary")
+#adf.test(diff.do2, alternative = "stationary")
+```
+
+
+
+So first order differencing makes the rest of our factors stationary!
+
+```{r auto.arimas, include = FALSE}
+#ar.temp.data<-data.MBts$WaterTemp[1:17520]
+#ar.temp<-auto.arima(ar.temp.data, stepwise = T)
+#summary(ar.temp)
+#plot(forecast(ar.temp, h = 100))
+
+#ar.ph.data<-data.MBts$pH[17520:35040]
+#ar.ph<-auto.arima(ar.ph.data, stepwise = T)
+#summary(ar.ph)
+#plot(forecast(ar.ph, h = 336))
+
+```
+
+```{r creating models using gamm()}
+#fipronil.model<-gamm()
+
+
+```

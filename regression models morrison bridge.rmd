@@ -1,0 +1,150 @@
+---
+title: "Regression Models - Morrison Bridge NAWQA"
+author: "Mark Roes"
+date: "June 3, 2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+# load packages
+options(repos=structure(c(cran="https://ftp.osuosl.org/pub/cran/")))  
+packages <- c("xtable", "knitr", "stringr", "DescTools", "chron", "TSA", "forecast", "mgcv", "leaps", "quantreg", "ggplot2") 
+if (length(setdiff(packages, rownames(installed.packages()))) > 0) {
+  install.packages(setdiff(packages, rownames(installed.packages())))  
+}  
+lapply(packages, require, character.only=TRUE)
+# options
+knitr::opts_knit$set(root.dir = 'C:/Users/Mark/Documents/consulting',echo=TRUE) 
+options(xtable.comment=FALSE)
+# Set file name
+series <- "imputedtimeseries1.csv"
+discrete<-"imputeddiscrete1.csv"
+```
+
+```{r merge}
+data.tsi <- read.csv(series, stringsAsFactors = FALSE)
+data.di <- read.csv(discrete, stringsAsFactors = FALSE)
+data.all <- merge(data.tsi, data.di, by="DateTime", all.y=TRUE)
+#data.all <- with(data.all, rm("DateTime", "Date", "date", "time", "sample_dt", "sample_tm"))
+# manage dates
+data.all$DateTime <- chron(dates=data.all$Date.chron, times=data.all$Time.chron, 
+                            format=c("m/d/y", "h:m:s"))
+```
+
+Some info of Metolachlor:
+
+Metolachlor is an herbicide used in agriculture to control grasses. Its use is controversial, the chemical is approved in the US for use, but NOT in the EU.  There are tolerance levels for this chemical in agriculture, but no maximum allowable level in drinking water -- only an advisory level.  Acoording to GHS (Globally Harmonized System for Hazard Communication), an international accord on chemical hazard, Metolachlor is:
+
+May cause an allergic skin reaction [Warning Sensitization, Skin - Category 1]
+
+Fatal if inhaled [Danger Acute toxicity, inhalation - Category 1, 2]
+
+Very toxic to aquatic life [Warning Hazardous to the aquatic environment, acute hazard - Category 1]
+
+Very toxic to aquatic life with long lasting effects [Warning Hazardous to the aquatic environment, long-term hazard - Category 1]
+
+```{r plot of metoforms}
+plot(data.all$DateTime, data.all$metoforms, xlab = "Date", ylab = "Metolachlor & degenerate forms (mcg/liter)")
+```
+
+```{r gamm and linear meto}
+#lets try a simple general additive mixed model!
+gam.meto<-gam(metoforms~Discharge+StreamVelocity+GageHeight+SensorDepth+WaterTemp+DissolvedO2+O2Saturation+pH+Conductance+Turbidity+SecchiDepth+Chlorophyll+Phycocyanin+fDOM+Nitrate, data = data.all)
+summary(gam.meto)
+
+#reduced gam model, did a stepwise removal of factors with highest p-values
+#If i remove any more than this, the % deviance explained drops drastically
+reduced.gam.meto<-gam(metoforms~WaterTemp+DissolvedO2+pH+Conductance+Turbidity+Chlorophyll+Phycocyanin, data = data.all)
+summary(reduced.gam.meto)
+#linear model
+lm.meto<-lm(metoforms~Discharge+StreamVelocity+GageHeight+SensorDepth+WaterTemp+DissolvedO2+O2Saturation+pH+Conductance+Turbidity+SecchiDepth+Chlorophyll+Phycocyanin+fDOM+Nitrate, data = data.all)
+summary(lm.meto)
+
+reduced.lm<-lm(metoforms~WaterTemp+DissolvedO2+pH+Conductance+Turbidity+Chlorophyll+Phycocyanin, data = data.all)
+summary(reduced.lm)
+```
+The linear model with all factors has only 'chlorophyll' as significant.  Using the leaps package to test the optimal set of factors.
+
+```{r leaps meto}
+leaps.meto<-regsubsets(x = data.all[,4:18], y = data.all$metoforms)
+plot(leaps.meto, scale = "r2")
+plot(leaps.meto, scale = "adjr2")
+plot(leaps.meto, scale = "bic")
+
+#Now test for fit with these 3 models created by leaps
+#full model
+plot(lm(metoforms~Discharge+StreamVelocity+GageHeight+SensorDepth+WaterTemp+DissolvedO2+O2Saturation+pH+Conductance+Turbidity+SecchiDepth+Chlorophyll+Phycocyanin+fDOM+Nitrate, data = data.all), which = 2)
+
+#highest r2
+plot(lm(metoforms~WaterTemp+DissolvedO2+O2Saturation+pH+Conductance+Turbidity+Chlorophyll+Phycocyanin, data = data.all), which = 2)
+
+#highest adjr2
+plot(lm(metoforms~WaterTemp+DissolvedO2+pH+Conductance+Turbidity+Chlorophyll+Phycocyanin, data = data.all), which = 2)
+
+#lowest BIC
+plot(lm(metoforms~Phycocyanin, data = data.all), which = 2)
+
+```
+
+```{r quantile regression models and comparison of all models via AIC}
+
+#full quantile regression
+full.rq.meto<-rq(metoforms~Discharge+StreamVelocity+GageHeight+SensorDepth+WaterTemp+DissolvedO2+O2Saturation+pH+Conductance+Turbidity+SecchiDepth+Chlorophyll+Phycocyanin+fDOM+Nitrate, data = data.all)
+AIC.rq(full.rq.meto)
+# reduced quantile regression for meto with tau = .5
+rq.meto<-rq(metoforms~WaterTemp+DissolvedO2+pH+Conductance+Turbidity+Chlorophyll+Phycocyanin, data = data.all)
+summary(rq.meto)
+
+#phyco rq
+rq.phyco<-rq(metoforms~Phycocyanin, data=data.all)
+AIC.rq(rq.phyco)
+
+#Let's compare the AIC values for all of these models:
+#AIC for quantile regression
+AIC.rq(rq.meto)
+
+#AIC for full LM model
+AIC(lm.meto)
+AIC(reduced.lm)
+#AIC for best linear model by BIC
+AIC(lm(metoforms~Phycocyanin, data = data.all))
+#AIC for best linear model by r2
+AIC(lm(metoforms~WaterTemp+DissolvedO2+O2Saturation+pH+Conductance+Turbidity+Chlorophyll+Phycocyanin, data = data.all))
+#AIC for best linear model by adjr2
+AIC(lm(metoforms~WaterTemp+DissolvedO2+pH+Conductance+Turbidity+Chlorophyll+Phycocyanin, data = data.all))
+
+#AIC for the two general additive mixed models
+llgam<-logLik.gam(gam.meto)
+AIC(llgam)
+red.llgam<-logLik.gam(reduced.gam.meto)
+AIC(red.llgam)
+
+
+#nonlinear quantile regression estimate, havent got to work yet
+#nlrq.meto<-nlrq(metoforms~WaterTemp+DissolvedO2+pH+Conductance+Turbidity+Chlorophyll+Phycocyanin, data = data.all)
+
+
+
+```
+
+So the quantile equation is:
+$$\hat y = -285.12336+1.33968\beta_1+.77693\beta_2+60.86468\beta_3+.63455\beta_4+1.70864\beta_5-4.68017\beta_6+35.00731\beta_7$$
+
+```{r linear models diazinone, include = FALSE}
+lm.diaz<-lm(diazforms~Discharge+StreamVelocity+GageHeight+SensorDepth+WaterTemp+DissolvedO2+O2Saturation+pH+Conductance+Turbidity+SecchiDepth+Chlorophyll+Phycocyanin+fDOM+Nitrate, data = data.all)
+summary(lm.diaz)
+
+sub.diaz<-regsubsets(x = data.all[,4:18], y = data.all$diazforms)
+plot(sub.diaz, scale = "adjr2")
+```
+
+```{r lets sum the responses}
+total<-data.all$diazforms+data.all$metoforms+data.all$hexaforms+data.all$fipforms
+lm.all<-lm(total~Discharge+StreamVelocity+GageHeight+SensorDepth+WaterTemp+DissolvedO2+O2Saturation+pH+Conductance+Turbidity+SecchiDepth+Chlorophyll+Phycocyanin+fDOM+Nitrate, data = data.all)
+summary(lm.all)
+
+subset.all<-regsubsets(x = data.all[,4:18], y = total)
+plot(subset.all, scale = "r2")
+plot(subset.all, scale = "adjr2")
+plot(subset.all, scale = "bic")
+```
